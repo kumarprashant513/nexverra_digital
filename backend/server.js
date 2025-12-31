@@ -6,24 +6,33 @@ import bodyParser from 'body-parser';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
+
 dotenv.config();
 
-
+// ==========================
+// App & Paths
+// ==========================
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = process.env.PORT || 5000;
+const MONGODB_URI = process.env.MONGODB_URI;
 
+// ==========================
+// Validate ENV
+// ==========================
+if (!MONGODB_URI) {
+  console.error('❌ MONGODB_URI is missing in environment variables');
+  process.exit(1);
+}
+
+// ==========================
 // Middleware
+// ==========================
 app.use(cors());
 app.use(bodyParser.json({ limit: '50mb' }));
 app.use(bodyParser.urlencoded({ limit: '50mb', extended: true }));
-
-// MongoDB URI
-const MONGODB_URI =
-  process.env.MONGODB_URI ||
-  'mongodb+srv://itsnexverra_db_user:WfVZ3fnBr1lyuS5N@cluster0.ha2gdv2.mongodb.net/?appName=Cluster0';
 
 // ==========================
 // MongoDB Schemas
@@ -33,7 +42,11 @@ const ProjectSchema = new mongoose.Schema(
     title: String,
     category: String,
     image: String,
-    type: { type: String, enum: ['Template', 'Dashboard'], default: 'Template' },
+    type: {
+      type: String,
+      enum: ['Template', 'Dashboard'],
+      default: 'Template'
+    },
     language: String,
     rating: Number,
     description: String,
@@ -52,7 +65,11 @@ const MessageSchema = new mongoose.Schema(
     plan: String,
     body: String,
     timestamp: { type: Date, default: Date.now },
-    status: { type: String, enum: ['unread', 'read', 'resolved'], default: 'unread' },
+    status: {
+      type: String,
+      enum: ['unread', 'read', 'resolved'],
+      default: 'unread'
+    },
     type: { type: String, default: 'portal' },
     history: Array
   },
@@ -63,7 +80,7 @@ const Project = mongoose.model('Project', ProjectSchema);
 const Message = mongoose.model('Message', MessageSchema);
 
 // ==========================
-// Serve Frontend
+// Serve Frontend (React dist)
 // ==========================
 const distPath = path.join(__dirname, 'dist');
 app.use(express.static(distPath));
@@ -92,11 +109,16 @@ app.post('/api/projects', async (req, res) => {
 
 app.put('/api/projects/:id', async (req, res) => {
   try {
-    const updated = await Project.findByIdAndUpdate(req.params.id, req.body, {
-      new: true,
-      runValidators: true
-    });
-    if (!updated) return res.status(404).json({ message: 'Project not found' });
+    const updated = await Project.findByIdAndUpdate(
+      req.params.id,
+      req.body,
+      { new: true, runValidators: true }
+    );
+
+    if (!updated) {
+      return res.status(404).json({ message: 'Project not found' });
+    }
+
     res.json(updated);
   } catch (err) {
     res.status(400).json({ message: err.message });
@@ -106,7 +128,11 @@ app.put('/api/projects/:id', async (req, res) => {
 app.delete('/api/projects/:id', async (req, res) => {
   try {
     const deleted = await Project.findByIdAndDelete(req.params.id);
-    if (!deleted) return res.status(404).json({ message: 'Project not found' });
+
+    if (!deleted) {
+      return res.status(404).json({ message: 'Project not found' });
+    }
+
     res.json({ message: 'Project deleted successfully' });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -137,9 +163,12 @@ app.post('/api/messages', async (req, res) => {
 
 app.patch('/api/messages/:id', async (req, res) => {
   try {
-    const updated = await Message.findByIdAndUpdate(req.params.id, req.body, {
-      new: true
-    });
+    const updated = await Message.findByIdAndUpdate(
+      req.params.id,
+      req.body,
+      { new: true }
+    );
+
     res.json(updated);
   } catch (err) {
     res.status(400).json({ message: err.message });
@@ -147,25 +176,43 @@ app.patch('/api/messages/:id', async (req, res) => {
 });
 
 // ==========================
-// React Router fallback
+// React Router Fallback
 // ==========================
 app.get('*', (req, res) => {
   res.sendFile(path.join(distPath, 'index.html'));
 });
 
 // ==========================
-// START SERVER AFTER DB CONNECTS
+// MongoDB Events (Debug)
+// ==========================
+mongoose.connection.on('connected', () => {
+  console.log('🟢 MongoDB connected');
+});
+
+mongoose.connection.on('error', err => {
+  console.error('🔴 MongoDB error:', err.message);
+});
+
+mongoose.connection.on('disconnected', () => {
+  console.log('🟠 MongoDB disconnected');
+});
+
+// ==========================
+// Start Server AFTER DB Connect
 // ==========================
 async function startServer() {
   try {
-    await mongoose.connect(MONGODB_URI);
-    console.log('✅ Successfully connected to Nexverra MongoDB');
+    await mongoose.connect(MONGODB_URI, {
+      serverSelectionTimeoutMS: 5000
+    });
+
+    console.log('✅ Successfully connected to MongoDB');
 
     app.listen(PORT, () => {
-      console.log(`🚀 Nexverra Backend & Frontend running on http://localhost:${PORT}`);
+      console.log(`🚀 Server running on port ${PORT}`);
     });
   } catch (error) {
-    console.error('❌ MongoDB connection failed:', error);
+    console.error('❌ MongoDB connection failed:', error.message);
     process.exit(1);
   }
 }
